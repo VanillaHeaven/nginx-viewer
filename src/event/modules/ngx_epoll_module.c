@@ -130,6 +130,7 @@ ngx_module_t  ngx_epoll_module = {
 };
 
 
+/* 创建epoll对象，赋值ngx_event_actions */
 static int ngx_epoll_init(ngx_cycle_t *cycle)
 {
     size_t             n;
@@ -205,6 +206,10 @@ static int ngx_epoll_add_event(ngx_event_t *ev, int event, u_int flags)
 
     c = ev->data;
 
+    /*
+     * 不是读就是写事件？
+     * 看这个逻辑一定读写一定是交错的？
+     */
     if (event == NGX_READ_EVENT) {
         e = c->write;
         prev = EPOLLOUT;

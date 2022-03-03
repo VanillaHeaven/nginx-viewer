@@ -67,6 +67,8 @@ void *ngx_push_array(ngx_array_t *a)
         }
     }
 
+    // 返回数组中未使用的第一个元素
+    // nelts 表示当前使用了多少个元素
     elt = (char *) a->elts + a->size * a->nelts;
     a->nelts++;
 

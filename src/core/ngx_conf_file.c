@@ -122,6 +122,7 @@ ngx_log_debug(cf->log, "token %d" _ rc);
         if (cf->handler) {
 
             /* custom handler, i.e. used in http "types { ... }" directive */
+            // 这里挂了个回调函数，看着 NGX_CORE_MODULE 是没有使用这个回调
 
             rv = (*cf->handler)(cf, NULL, cf->handler_conf);
             if (rv == NGX_CONF_OK) {
@@ -236,13 +237,27 @@ ngx_log_debug(cf->log, "command '%s'" _ cmd->name.data);
 
                     conf = NULL;
 
+                    // NGX_DIRECT_CONF 出现在main上下文的，没有子级配置的配置项，
                     if (cmd->type & NGX_DIRECT_CONF) {
+                        // 这里强转成指针的指针
+                        // 是因为 NGX_DIRECT_CONF 类型指令的配置是以void * 存入conf_ctx的
+                        // 所以 conf_ctx 就变成了指针的指针，即 void **
+                        // 其元素就是 void *，与 NGX_DIRECT_CONF 类型指令的配置一致
+                        // 咱们看一下指令是如何使用这些配置的
                         conf = ((void **) cf->ctx)[ngx_modules[m]->index];
 
                     } else if (cmd->type & NGX_MAIN_CONF) {
+                        // 这里实际结果是 void **，也就是包含了子级指令的主指令
+                        // 如 http event 等
+                        // 以 event 模块为例，这里拿到了 event 类模块的配置
                         conf = &(((void **) cf->ctx)[ngx_modules[m]->index]);
 
                     } else if (cf->ctx) {
+                        // 进入这条判断分支，
+                        // cf->ctx 已经不是指向一级配置了
+                        // 而是经过上面 NGX_MAIN_CONF 那条判断分支取出来的二级配置
+                        // 比如 event, 这里cf->ctx 的指针其实已经指向了 cycle->conf_ctx[ngx_event_module->index]
+                        // 所以这里取子级指令的配置，只要加上偏移量 cmd->conf 就可以取到
                         confp = *(void **) ((char *) cf->ctx + cmd->conf);
 
                         if (confp) {
@@ -384,6 +399,7 @@ ngx_log_debug(cf->log, "%d:%d:%d:%d:%d '%c'" _
             continue;
         }
 
+        // 上个字符是转义符，直接跳过当前字符，etc \n
         if (quoted) {
             quoted = 0;
             continue;
@@ -487,6 +503,7 @@ ngx_log_debug(cf->log, "%d:%d:%d:%d:%d '%c'" _
 
             } else if (ch == ' ' || ch == '\t' || ch == CR || ch == LF
                        || ch == ';' || ch == '{') {
+                // 这个是针对 last_space == 1， 进入 default 的情况，正常的指令会被这个逻辑截取
                 last_space = 1;
                 found = 1;
             }

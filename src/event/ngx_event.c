@@ -249,6 +249,11 @@ static ngx_int_t ngx_event_module_init(ngx_cycle_t *cycle)
 }
 
 
+/*
+ * action.init
+ * action.add_conn
+ * action.add
+ */
 static ngx_int_t ngx_event_process_init(ngx_cycle_t *cycle)
 {
     ngx_uint_t           m, i;
@@ -290,6 +295,7 @@ static ngx_int_t ngx_event_process_init(ngx_cycle_t *cycle)
             continue;
         }
 
+        /* init 使用的时间模块 */  
         if (ngx_modules[m]->ctx_index == ecf->use) {
             module = ngx_modules[m]->ctx;
             if (module->actions.init(cycle) == NGX_ERROR) {
@@ -361,6 +367,7 @@ static ngx_int_t ngx_event_process_init(ngx_cycle_t *cycle)
         fd /= 4;
 #endif
 
+        // 这里fd的值不会超过数组大小吗？
         c = &cycle->connections[fd];
         rev = &cycle->read_events[fd];
         wev = &cycle->write_events[fd];
@@ -477,14 +484,22 @@ static char *ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             continue;
         }
 
+        /* 和http模块一样，ctx_index 定义了子级模块的编号*/
         ngx_modules[m]->ctx_index = ngx_event_max_module++;
     }
 
+    //  ctx: 8 个字节，内容是一个地址，记录为 addr1
     ngx_test_null(ctx, ngx_pcalloc(cf->pool, sizeof(void *)), NGX_CONF_ERROR);
 
+    //  *ctx: 取出 addr1 地址指向的内容，内容指向一个地址，记录为 addr2
+    // addr2 是 ngx_event_max_module * sizeof(void *) 数组的首地址
     ngx_test_null(*ctx,
                   ngx_pcalloc(cf->pool, ngx_event_max_module * sizeof(void *)),
                   NGX_CONF_ERROR);
+    // 以此类推
+    // **ctx: 取出 addr2 地址指向的内容，内容是一个 void * 指针，是一个地址，记录为 addr3
+    // addr3 就指向了具体的模块配置结构体
+    // ***ctx: 取出 addr3 地址指向的内容，内容是某个模块的配置结构体。
 
     *(void **) conf = ctx;
 
@@ -748,6 +763,7 @@ static char *ngx_event_init_conf(ngx_cycle_t *cycle, void *conf)
                 continue;
             }
 
+            // 默认取除event_core外，第一个事件模型
             m = ngx_modules[i]->ctx_index;
             break;
         }

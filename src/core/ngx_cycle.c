@@ -36,6 +36,13 @@ static ngx_str_t  error_log = ngx_null_string;
 #endif
 
 
+/*
+* 配置解析核心函数
+* creat_conf
+* parse
+* init_conf
+* init_modules
+*/
 ngx_cycle_t *ngx_init_cycle(ngx_cycle_t *old_cycle)
 {
     void               *rv;
@@ -132,6 +139,10 @@ ngx_cycle_t *ngx_init_cycle(ngx_cycle_t *old_cycle)
 
         module = ngx_modules[i]->ctx;
 
+        // NGX_DIRECT_CONF 的配置在这里创建
+        // NGX_DIRECT_CONF 我的理解是：出现在main上下文的，没有子级配置的配置项，
+        // 例如 daemon、worker_process 这种，就是 NGX_DIRECT_CONF，由于没有子级配置，所以叫“直接”
+        // 而 http 这种的，有子级配置的，就不是 DIRECT
         if (module->create_conf) {
             rv = module->create_conf(cycle);
             if (rv == NGX_CONF_ERROR) {

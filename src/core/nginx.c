@@ -157,6 +157,7 @@ int main(int argc, char *const *argv)
     }
 
     ngx_max_module = 0;
+    // 统计所有模块的个数
     for (i = 0; ngx_modules[i]; i++) {
         ngx_modules[i]->index = ngx_max_module++;
     }
