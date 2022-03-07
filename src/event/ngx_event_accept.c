@@ -20,6 +20,9 @@ static void ngx_close_accepted_socket(ngx_socket_t s, ngx_log_t *log);
 static size_t ngx_accept_log_error(void *data, char *buf, size_t len);
 
 
+/*
+ * 猜测跟建联有关，会使用到 accept 函数
+ */
 void ngx_event_accept(ngx_event_t *ev)
 {
     ngx_uint_t             instance, accepted;
@@ -40,6 +43,7 @@ void ngx_event_accept(ngx_event_t *ev)
         ev->available = 1;
 
     } else if (!(ngx_event_flags & NGX_HAVE_KQUEUE_EVENT)) {
+        /* 似乎这种模式下，可以支持一次接收多个请求 */
         ev->available = ecf->multi_accept;
     }
 
@@ -87,6 +91,7 @@ void ngx_event_accept(ngx_event_t *ev)
         }
 
         /* -1 disables the connection number logging */
+        /* ctx是用于log打印的信息数据 */
         ctx->flag = -1;
         ctx->name = ls->listening->addr_text.data;
 
@@ -124,6 +129,7 @@ void ngx_event_accept(ngx_event_t *ev)
 
                 if (ev->available) {
                     /* reuse the previously allocated pool */
+                    /* KQUEUE下，继续循环处理下一个 */
                     continue;
                 }
             }
@@ -136,6 +142,10 @@ void ngx_event_accept(ngx_event_t *ev)
         (*ngx_stat_accepted)++;
 #endif
 
+        /*??? 连接数上限似乎跟文件描述符上限是同一个东西
+         * 这里随着文件描述符越来越大，ngx_accept_disabled 离正数就越来越近
+         * 当ngx_accept_disabled 大于0时，不能接收新连接。
+         */
         ngx_accept_disabled = (ngx_uint_t) s + NGX_ACCEPT_THRESHOLD
                                                             - ecf->connections;
 
@@ -221,6 +231,7 @@ void ngx_event_accept(ngx_event_t *ev)
 
 #endif
 
+        /* 从这开始初始化一个连接 */
         ngx_memzero(rev, sizeof(ngx_event_t));
         ngx_memzero(wev, sizeof(ngx_event_t));
         ngx_memzero(c, sizeof(ngx_connection_t));
@@ -231,6 +242,7 @@ void ngx_event_accept(ngx_event_t *ev)
         c->sockaddr = sa;
         c->socklen = len;
 
+        /* 传说中的取反标记重复使用连接 */
         rev->instance = !instance;
         wev->instance = !instance;
 
@@ -261,6 +273,8 @@ void ngx_event_accept(ngx_event_t *ev)
         c->ctx = ls->ctx;
         c->servers = ls->servers;
 
+        /* 关注下这里挂的回调函数*/
+        /* 这里设置了连接读写TCP数据的回调函数 */
         c->recv = ngx_recv;
         c->send_chain = ngx_send_chain;
 
@@ -340,6 +354,7 @@ void ngx_event_accept(ngx_event_t *ev)
         log->data = NULL;
         log->handler = NULL;
 
+        /* 从这里开启就交由http模块处理了 */
         ls->listening->handler(c);
 
         if (ngx_event_flags & NGX_HAVE_KQUEUE_EVENT) {

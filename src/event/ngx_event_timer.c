@@ -18,6 +18,10 @@ ngx_thread_volatile ngx_rbtree_t  *ngx_event_timer_rbtree;
 ngx_rbtree_t                       ngx_event_timer_sentinel;
 
 
+/* 初始化定时任务，
+ * nginx的定时任务是通过红黑树实现的，
+ * ngx_rbtree.c 中是红黑树的实现，可以学习下
+ */
 ngx_int_t ngx_event_timer_init(ngx_log_t *log)
 {
     if (ngx_event_timer_rbtree) {
@@ -52,6 +56,7 @@ ngx_msec_t ngx_event_find_timer(void)
         return NGX_TIMER_ERROR;
     }
 
+    /* 找到最新的事件 */
     node = ngx_rbtree_min((ngx_rbtree_t *) ngx_event_timer_rbtree,
                           &ngx_event_timer_sentinel);
 

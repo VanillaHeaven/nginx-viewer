@@ -142,6 +142,13 @@ static int ngx_epoll_init(ngx_cycle_t *cycle)
     epcf = ngx_event_get_conf(cycle->conf_ctx, ngx_epoll_module);
 
     if (ep == -1) {
+        /* 这里数量为什么是连接的一半？
+         * 在最初的epoll_create（）实现中，size参数将调用者希望添加到的文件描述符的数量告知内核。epoll实例。
+         * 内核使用该信息作为内部数据结构初始分配空间的提示，事件。 
+         * （如果有必要，如果调用方的使用超出了大小提示，内核将分配更多空间。）
+         * 如今，此提示不再必需（内核无需提示即可动态调整所需数据结构的大小），但是大小必须仍大于零，
+         * 以便当新的epoll应用程序在较旧的内核上运行时，请确保向后兼容。
+         */
         ep = epoll_create(ecf->connections / 2);
 
         if (ep == -1) {
@@ -152,6 +159,7 @@ static int ngx_epoll_init(ngx_cycle_t *cycle)
     }
 
     if (nevents < epcf->events) {
+        // 这个数组决定了一次收集事件的个数
         if (event_list) {
             ngx_free(event_list);
         }
@@ -165,13 +173,18 @@ static int ngx_epoll_init(ngx_cycle_t *cycle)
 
     nevents = epcf->events;
 
+    /*??? 似乎设置了io的一些回调
+     * 设置了tcp读写的一些回调
+     */
     ngx_io = ngx_os_io;
 
     ngx_event_actions = ngx_epoll_module_ctx.actions;
 
+    /* 支持边沿触发，这里宏的名字为什么这么叫？ */
 #if (HAVE_CLEAR_EVENT)
     ngx_event_flags = NGX_USE_CLEAR_EVENT
 #else
+    /* 水平触发 */
     ngx_event_flags = NGX_USE_LEVEL_EVENT
 #endif
                       |NGX_HAVE_GREEDY_EVENT
@@ -181,6 +194,7 @@ static int ngx_epoll_init(ngx_cycle_t *cycle)
 }
 
 
+/* 关闭ep的描述符，释放对应结构内存 */
 static void ngx_epoll_done(ngx_cycle_t *cycle)
 {
     if (close(ep) == -1) {
@@ -226,14 +240,23 @@ static int ngx_epoll_add_event(ngx_event_t *ev, int event, u_int flags)
     }
 
     if (e->active) {
+        /* ??? 如果上一个事件是活跃的
+         * 说明请求在处理中，
+         * 那么连接是既可读，也可写的
+         */
         op = EPOLL_CTL_MOD;
         event |= prev;
 
     } else {
+        /*
+         * 如果连接是刚被激活，
+         * 那么就添加ADD它
+         */
         op = EPOLL_CTL_ADD;
     }
 
     ee.events = event | flags;
+    /* 事件处理的对象指针 */
     ee.data.ptr = (void *) ((uintptr_t) c | ev->instance);
 
     ngx_log_debug3(NGX_LOG_DEBUG_EVENT, ev->log, 0,
@@ -246,6 +269,7 @@ static int ngx_epoll_add_event(ngx_event_t *ev, int event, u_int flags)
         return NGX_ERROR;
     }
 
+    /* 激活事件 */
     ev->active = 1;
 #if 0
     ev->oneshot = (flags & NGX_ONESHOT_EVENT) ? 1 : 0;
@@ -290,6 +314,7 @@ static int ngx_epoll_del_event(ngx_event_t *ev, int event, u_int flags)
         ee.data.ptr = (void *) ((uintptr_t) c | ev->instance);
 
     } else {
+        /* 只有连接不活跃了才真的删除事件 */
         op = EPOLL_CTL_DEL;
         ee.events = 0;
         ee.data.ptr = NULL;
@@ -371,6 +396,11 @@ static int ngx_epoll_del_connection(ngx_connection_t *c, u_int flags)
 }
 
 
+/*
+ 让我们一起看看事件驱动的核心逻辑函数 
+ 先总体浏览一遍，
+ 疑惑的地方先打个标记
+*/
 int ngx_epoll_process_events(ngx_cycle_t *cycle)
 {
     int                events;
@@ -386,6 +416,11 @@ int ngx_epoll_process_events(ngx_cycle_t *cycle)
     ngx_epoch_msec_t   delta;
 
     for ( ;; ) { 
+        /*
+         * timer是epoll_wait的超时时间
+         * 0表示立即返回
+         * -1表示无限等待
+         */
         timer = ngx_event_find_timer();
 
 #if (NGX_THREADS)
@@ -428,15 +463,22 @@ int ngx_epoll_process_events(ngx_cycle_t *cycle)
     ngx_old_elapsed_msec = ngx_elapsed_msec;
     accept_lock = 0;
 
+    /* 这里一段获取锁的逻辑
+     * 任何锁的操作，都是对共享资源的处理
+     */
     if (ngx_accept_mutex) {
         if (ngx_accept_disabled > 0) {
             ngx_accept_disabled--;
 
         } else {
+            /* 尝试对什么资源加锁，争抢资源，争抢对请求的处理权？
+             * ngx_trylock_accept_mutex 应该是用于标识，进程是否已经抢到了接收连接事件的处理权
+             */
             if (ngx_trylock_accept_mutex(cycle) == NGX_ERROR) {
                 return NGX_ERROR;
             }
 
+            /* 拿到资源了 */
             if (ngx_accept_mutex_held) {
                 accept_lock = 1;
 
@@ -473,6 +515,7 @@ int ngx_epoll_process_events(ngx_cycle_t *cycle)
         ngx_log_debug2(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                        "epoll timer: %d, delta: %d", timer, (int) delta);
     } else {
+        /* timer为-1时，返回的事件个数一定不为0的 */
         if (events == 0) {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, 0,
                           "epoll_wait() returned no events without timeout");
@@ -489,6 +532,9 @@ int ngx_epoll_process_events(ngx_cycle_t *cycle)
     }
 
     if (events > 0) {
+        /* #define ngx_mutex_lock NGX_OK 
+         * NGX_OK == NGX_ERROR? 什么鬼
+         */
         if (ngx_mutex_lock(ngx_posted_events_mutex) == NGX_ERROR) {
             ngx_accept_mutex_unlock();
             return NGX_ERROR;
@@ -510,6 +556,9 @@ int ngx_epoll_process_events(ngx_cycle_t *cycle)
 
         rev = c->read;
 
+        /* nginx巧妙的用链接类型的最后一个bit
+         * 做了一些事情
+         */
         if (c->fd == -1 || rev->instance != instance) {
 
             /*
@@ -558,6 +607,7 @@ int ngx_epoll_process_events(ngx_cycle_t *cycle)
                     wev->event_handler(wev);
 
                 } else {
+                    /* 看字面意思，如果抢到锁了，就发布一个事件？ */
                     ngx_post_event(wev);
                 }
             }
@@ -638,7 +688,7 @@ int ngx_epoll_process_events(ngx_cycle_t *cycle)
     return NGX_OK;
 }
 
-
+/* epoll模块的配置就只有一个，设置wait收集事件个数的上限 */
 static void *ngx_epoll_create_conf(ngx_cycle_t *cycle)
 {
     ngx_epoll_conf_t  *epcf;
@@ -656,6 +706,7 @@ static char *ngx_epoll_init_conf(ngx_cycle_t *cycle, void *conf)
 {
     ngx_epoll_conf_t *epcf = conf;
 
+    /* 默认初始512个事件 */
     ngx_conf_init_unsigned_value(epcf->events, 512);
 
     return NGX_CONF_OK;

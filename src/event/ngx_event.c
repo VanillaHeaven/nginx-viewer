@@ -200,6 +200,9 @@ static ngx_int_t ngx_event_module_init(ngx_cycle_t *cycle)
 
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
 
+    /*??? 单进程模式，不需要event模块处理
+     * ngx_accept_mutex_ptr 接收锁 的指针
+     */
     if (ccf->master == 0 || ngx_accept_mutex_ptr) {
         return NGX_OK;
     }
@@ -250,6 +253,8 @@ static ngx_int_t ngx_event_module_init(ngx_cycle_t *cycle)
 
 
 /*
+ * 初始化定时器 
+ * 创建连接和读写事件对象
  * action.init
  * action.add_conn
  * action.add
@@ -284,6 +289,7 @@ static ngx_int_t ngx_event_process_init(ngx_cycle_t *cycle)
     }
 #endif
 
+    /* 初始化管理定时任务的红黑树 */
     if (ngx_event_timer_init(cycle->log) == NGX_ERROR) {
         return NGX_ERROR;
     }
@@ -295,7 +301,7 @@ static ngx_int_t ngx_event_process_init(ngx_cycle_t *cycle)
             continue;
         }
 
-        /* init 使用的时间模块 */  
+        /* init 使用的事件模块 */  
         if (ngx_modules[m]->ctx_index == ecf->use) {
             module = ngx_modules[m]->ctx;
             if (module->actions.init(cycle) == NGX_ERROR) {
@@ -306,6 +312,7 @@ static ngx_int_t ngx_event_process_init(ngx_cycle_t *cycle)
         }
     }
 
+    /* 连接是事件处理的对象，每个连接都有对应读、写事件 */
     cycle->connections = ngx_alloc(sizeof(ngx_connection_t) * ecf->connections,
                                    cycle->log);
     if (cycle->connections == NULL) {
@@ -393,6 +400,7 @@ static ngx_int_t ngx_event_process_init(ngx_cycle_t *cycle)
         rev->data = c;
         rev->index = NGX_INVALID_INDEX;
 
+        /* available应该表示一次可接收的连接数 */
         rev->available = 0;
 
         rev->accept = 1;
@@ -443,19 +451,25 @@ static ngx_int_t ngx_event_process_init(ngx_cycle_t *cycle)
         }
 
 #else
-
+        /* 设置读事件回调函数 */
         rev->event_handler = &ngx_event_accept;
 
+        /*??? 为什么这里跳出了，不用注册事件吗？ngx_accept_mutex做什么用的 */
         if (ngx_accept_mutex) {
             continue;
         }
 
+        /* add_conn 注册、监听事件 */
         if (ngx_event_flags & NGX_USE_RTSIG_EVENT) {
+            /* RTSIG事件模型 */
             if (ngx_add_conn(c) == NGX_ERROR) {
                 return NGX_ERROR;
             }
 
         } else {
+            /* epoll事件模型进到这个逻辑
+             * 第一个事件是读事件
+             */
             if (ngx_add_event(rev, NGX_READ_EVENT, 0) == NGX_ERROR) {
                 return NGX_ERROR;
             }
@@ -468,6 +482,11 @@ static ngx_int_t ngx_event_process_init(ngx_cycle_t *cycle)
 }
 
 
+/*
+* create_conf
+* ngx_conf_parse
+* init_conf
+*/
 static char *ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
     int                    m;

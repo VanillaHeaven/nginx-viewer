@@ -302,6 +302,12 @@ ngx_cycle_t *ngx_init_cycle(ngx_cycle_t *old_cycle)
 
                         fd /= 4;
 #endif
+
+                        /* 连接socket的文件描述符号上限，受到connections配置项的约束
+                         * 觉得很神奇，文件描述符难道不是会被其他结构占用掉一部分吗？
+                         * 比如打开的日志文件，pid文件等，那么实际用户表示连接socket的文件描述符
+                         * 不会低于connections配置项的个数吗？
+                         */
                         if (fd >= (ngx_socket_t) cycle->connection_n) {
                             ngx_log_error(NGX_LOG_EMERG, log, 0,
                                         "%d connections is not enough to hold "

@@ -68,6 +68,7 @@ ngx_inline static void ngx_event_del_timer(ngx_event_t *ev)
 }
 
 
+/* 添加定时任务 */
 ngx_inline static void ngx_event_add_timer(ngx_event_t *ev, ngx_msec_t timer)
 {
     ngx_int_t  key;

@@ -108,7 +108,7 @@ void ngx_http_init_connection(ngx_connection_t *c)
         return;
     }
 
-    ctx->connection = c->number;
+    ctx->connection = c->number; // 连接计数
     ctx->client = c->addr_text.data;
     ctx->action = "reading client request line";
     c->log->data = ctx;
@@ -120,10 +120,17 @@ void ngx_http_init_connection(ngx_connection_t *c)
 
     /* STUB: epoll edge */ c->write->event_handler = ngx_http_empty_handler;
 
+    /* 如果读事件已经准备好了，那么就进入执行 */
+    /* 在ngx_event_accept中，如果是epoll，这个应该是会进入 */
     if (rev->ready) {
         /* the deferred accept(), rtsig, aio, iocp */
 
+        /*??? 有这个锁就延后处理读事件
+         * 上面的rev->event_handler = ngx_http_init_request回调设置
+         * 就是为了后面延后事件的回调
+         */
         if (ngx_accept_mutex) {
+            /* 发布延后事件，需要先获取锁 */
             if (ngx_mutex_lock(ngx_posted_events_mutex) == NGX_ERROR) {
                 ngx_http_close_connection(c);
                 return;
@@ -139,12 +146,15 @@ void ngx_http_init_connection(ngx_connection_t *c)
         (*ngx_stat_reading)++;
 #endif
 
+        /* 初始化请求 */
         ngx_http_init_request(rev);
         return;
     }
 
+    /* 给读事件设置定时器，回头处理 */
     ngx_add_timer(rev, c->listening->post_accept_timeout);
 
+    /* 这里似乎epoll没有做什么处理 */
     if (ngx_handle_read_event(rev, 0) == NGX_ERROR) {
         ngx_http_close_connection(c);
         return;

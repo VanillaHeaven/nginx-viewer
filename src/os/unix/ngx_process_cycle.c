@@ -558,7 +558,14 @@ static void ngx_master_exit(ngx_cycle_t *cycle, ngx_master_ctx_t *ctx)
     exit(0);
 }
 
-
+/*
+* 开始是对信号和进程间通信的一些处理
+* 然后就进入了进程的循环
+* 之前居然没有注意到 ngx_process_events 这么重要的函数
+* 在主循环内，
+* 除了对信号的一些处理，就是执行这个事件的函数
+* 这个函数调用的是 ngx_event_actions.process_events 这个钩子
+*/
 static void ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
 {
     sigset_t           set;
