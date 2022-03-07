@@ -9,6 +9,7 @@
 #include <ngx_event.h>
 
 
+/* 往TCP另一端写数据 */
 ssize_t ngx_unix_send(ngx_connection_t *c, u_char *buf, size_t size)
 {
     ssize_t       n;

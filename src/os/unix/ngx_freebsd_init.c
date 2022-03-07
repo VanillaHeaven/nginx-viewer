@@ -25,7 +25,15 @@ int ngx_freebsd_kern_ipc_zero_copy_send;
 ngx_uint_t ngx_freebsd_sendfile_nbytes_bug;
 ngx_uint_t ngx_freebsd_use_tcp_nopush;
 
-
+/*
+typedef struct {
+    ngx_recv_pt        recv;
+    ngx_recv_chain_pt  recv_chain;
+    ngx_send_pt        send;
+    ngx_send_chain_pt  send_chain;
+    ngx_uint_t         flags;
+} ngx_os_io_t;
+*/
 ngx_os_io_t ngx_os_io = {
     ngx_unix_recv,
     ngx_readv_chain,

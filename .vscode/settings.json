@@ -1,6 +1,8 @@
 {
     "files.associations": {
         "ngx_config.h": "c",
-        "ngx_core.h": "c"
+        "ngx_core.h": "c",
+        "new": "c",
+        "typeinfo": "c"
     }
 }

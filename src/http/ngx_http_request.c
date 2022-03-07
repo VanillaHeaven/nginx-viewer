@@ -124,6 +124,7 @@ void ngx_http_init_connection(ngx_connection_t *c)
         /* the deferred accept(), rtsig, aio, iocp */
 
         if (ngx_accept_mutex) {
+            /* 发布延后事件，需要先获取锁 */
             if (ngx_mutex_lock(ngx_posted_events_mutex) == NGX_ERROR) {
                 ngx_http_close_connection(c);
                 return;

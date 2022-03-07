@@ -52,6 +52,7 @@ ngx_msec_t ngx_event_find_timer(void)
         return NGX_TIMER_ERROR;
     }
 
+    /* 找到最新的事件 */
     node = ngx_rbtree_min((ngx_rbtree_t *) ngx_event_timer_rbtree,
                           &ngx_event_timer_sentinel);
 

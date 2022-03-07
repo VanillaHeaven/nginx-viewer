@@ -306,6 +306,7 @@ static ngx_int_t ngx_event_process_init(ngx_cycle_t *cycle)
         }
     }
 
+    /* 连接是事件处理的对象，每个连接都有对应读、写事件 */
     cycle->connections = ngx_alloc(sizeof(ngx_connection_t) * ecf->connections,
                                    cycle->log);
     if (cycle->connections == NULL) {
@@ -443,19 +444,25 @@ static ngx_int_t ngx_event_process_init(ngx_cycle_t *cycle)
         }
 
 #else
-
+        /* 设置读事件回调函数 */
         rev->event_handler = &ngx_event_accept;
 
+        /*??? 为什么这里跳出了，不用注册事件吗？ngx_accept_mutex做什么用的 */
         if (ngx_accept_mutex) {
             continue;
         }
 
+        /* add_conn 注册、监听事件 */
         if (ngx_event_flags & NGX_USE_RTSIG_EVENT) {
+            /* RTSIG事件模型 */
             if (ngx_add_conn(c) == NGX_ERROR) {
                 return NGX_ERROR;
             }
 
         } else {
+            /* epoll事件模型进到这个逻辑
+             * 第一个事件是读事件
+             */
             if (ngx_add_event(rev, NGX_READ_EVENT, 0) == NGX_ERROR) {
                 return NGX_ERROR;
             }

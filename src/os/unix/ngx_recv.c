@@ -117,6 +117,7 @@ ssize_t ngx_unix_recv(ngx_connection_t *c, u_char *buf, size_t size)
 
 #else /* ! NAVE_KQUEUE */
 
+/* 系统调用，从tcp接收数据 */
 ssize_t ngx_unix_recv(ngx_connection_t *c, u_char *buf, size_t size)
 {
     ssize_t       n;
