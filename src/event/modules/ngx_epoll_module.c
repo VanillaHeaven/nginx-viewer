@@ -240,7 +240,7 @@ static int ngx_epoll_add_event(ngx_event_t *ev, int event, u_int flags)
     }
 
     if (e->active) {
-        /* ??? 如果上一个事件是活跃的
+        /* 如果上一个事件是活跃的
          * 说明请求在处理中，
          * 那么连接是既可读，也可写的
          */
