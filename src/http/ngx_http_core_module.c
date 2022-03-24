@@ -310,6 +310,7 @@ ngx_http_module_t  ngx_http_core_module_ctx = {
 };
 
 
+/* http core 模块，不像 event core 模块一样和 ngx_event_module 在同个文件定义  */
 ngx_module_t  ngx_http_core_module = {
     NGX_MODULE,
     &ngx_http_core_module_ctx,             /* module context */
@@ -928,6 +929,8 @@ static char *ngx_server_block(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
                   ngx_pcalloc(cf->pool, sizeof(void *) * ngx_http_max_module),
                   NGX_CONF_ERROR);
 
+
+    /* 果然，每个server有自己的ctx配置存储结构 */
     for (m = 0; ngx_modules[m]; m++) {
         if (ngx_modules[m]->type != NGX_HTTP_MODULE) {
             continue;
@@ -1291,6 +1294,7 @@ static char *ngx_http_core_merge_srv_conf(ngx_conf_t *cf,
 
     /* TODO: it does not merge, it inits only */
 
+    /* 默认监听80端口 */
     if (conf->listen.nelts == 0) {
         ngx_test_null(l, ngx_push_array(&conf->listen), NGX_CONF_ERROR);
         l->addr = INADDR_ANY;

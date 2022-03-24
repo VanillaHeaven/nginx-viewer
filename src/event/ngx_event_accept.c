@@ -21,7 +21,8 @@ static size_t ngx_accept_log_error(void *data, char *buf, size_t len);
 
 
 /*
- * 猜测跟建联有关，会使用到 accept 函数
+ * accept连接
+ * 重新初始化连接
  */
 void ngx_event_accept(ngx_event_t *ev)
 {
@@ -231,7 +232,9 @@ void ngx_event_accept(ngx_event_t *ev)
 
 #endif
 
-        /* 从这开始初始化一个连接 */
+        /* 从这开始初始化一个连接
+         * ??? 不太明白为什么要重新初始化一个链接
+         */
         ngx_memzero(rev, sizeof(ngx_event_t));
         ngx_memzero(wev, sizeof(ngx_event_t));
         ngx_memzero(c, sizeof(ngx_connection_t));
@@ -375,6 +378,7 @@ ngx_int_t ngx_trylock_accept_mutex(ngx_cycle_t *cycle)
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                        "accept mutex locked");
 
+        // 之前获取过锁了，不需要重复注册监听事件
         if (!ngx_accept_mutex_held) {
             if (ngx_enable_accept_events(cycle) == NGX_ERROR) {
                 *ngx_accept_mutex = 0;

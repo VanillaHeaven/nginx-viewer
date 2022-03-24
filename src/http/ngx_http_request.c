@@ -98,6 +98,7 @@ static void ngx_http_dummy(ngx_event_t *wev)
 #endif
 
 
+/* 处理请求前一些上下文设置，日志设置，延后处理设置，以及连接上无数据的延后处理 */
 void ngx_http_init_connection(ngx_connection_t *c)
 {
     ngx_event_t         *rev;
@@ -116,7 +117,7 @@ void ngx_http_init_connection(ngx_connection_t *c)
     c->log_error = NGX_ERROR_INFO;
 
     rev = c->read;
-    rev->event_handler = ngx_http_init_request;
+    rev->event_handler = ngx_http_init_request; // post和timer都可能用到这个回调
 
     /* STUB: epoll edge */ c->write->event_handler = ngx_http_empty_handler;
 
@@ -128,6 +129,7 @@ void ngx_http_init_connection(ngx_connection_t *c)
         /*??? 有这个锁就延后处理读事件
          * 上面的rev->event_handler = ngx_http_init_request回调设置
          * 就是为了后面延后事件的回调
+         * 有accept锁，所以先延后处理，尽快释放锁
          */
         if (ngx_accept_mutex) {
             /* 发布延后事件，需要先获取锁 */
@@ -146,12 +148,12 @@ void ngx_http_init_connection(ngx_connection_t *c)
         (*ngx_stat_reading)++;
 #endif
 
-        /* 初始化请求 */
+        /* 没有accept锁，就不需要延后处理，直接初始化请求 */
         ngx_http_init_request(rev);
         return;
     }
 
-    /* 给读事件设置定时器，回头处理 */
+    /* 读事件还未准备好，给读事件设置定时器，过一段时间后再ngx_http_init_request */
     ngx_add_timer(rev, c->listening->post_accept_timeout);
 
     /* 这里似乎epoll没有做什么处理 */
@@ -198,6 +200,7 @@ static void ngx_http_init_request(ngx_event_t *rev)
 
     c = rev->data;
 
+    /* 在ngx_event_expire_timers函数中标记的timeout */
     if (rev->timedout) {
         ngx_log_error(NGX_LOG_INFO, c->log, NGX_ETIMEDOUT, "client timed out");
 
@@ -229,6 +232,7 @@ static void ngx_http_init_request(ngx_event_t *rev)
         }
     }
 
+    /* 初始化请求 */
     r = hc->request;
 
     if (r) {
@@ -268,6 +272,12 @@ static void ngx_http_init_request(ngx_event_t *rev)
 
     /* AF_INET only */
 
+    /*
+     * in_port成员：
+     * 1. 端口
+     * 2. 端口字符串名称
+     * 3. 地址数组(监听多个地址)
+     */
     in_port = c->servers;
     in_addr = in_port->addrs.elts;
 
@@ -294,6 +304,7 @@ static void ngx_http_init_request(ngx_event_t *rev)
         } else {
 #endif
             len = sizeof(struct sockaddr_in);
+            /* getsockname() 返回当前名称指定的套接字 */
             if (getsockname(c->fd, (struct sockaddr *) &addr_in, &len) == -1) {
                 ngx_connection_error(c, ngx_socket_errno,
                                      "getsockname() failed");
@@ -301,6 +312,7 @@ static void ngx_http_init_request(ngx_event_t *rev)
                 return;
             }
 
+            /* 客户端IP */
             r->in_addr = addr_in.sin_addr.s_addr;
 
 #if (WIN32)
@@ -308,6 +320,7 @@ static void ngx_http_init_request(ngx_event_t *rev)
 #endif
 
         /* the last in_port->addrs address is "*" */
+        /* 地址数组最后一个是* */
 
         for ( /* void */ ; i < in_port->addrs.nelts - 1; i++) {
             if (in_addr[i].addr == r->in_addr) {

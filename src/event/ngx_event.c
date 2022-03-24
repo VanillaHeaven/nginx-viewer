@@ -454,7 +454,18 @@ static ngx_int_t ngx_event_process_init(ngx_cycle_t *cycle)
         /* 设置读事件回调函数 */
         rev->event_handler = &ngx_event_accept;
 
-        /*??? 为什么这里跳出了，不用注册事件吗？ngx_accept_mutex做什么用的 */
+        /*??? 为什么这里跳出了，不用注册事件吗？ngx_accept_mutex做什么用的
+         * 答：accept_mutex 锁是为了解决惊群效应。
+         * 当没有开启ngx_accept_mutex锁时，
+         * 所有的worker进程都会注册accept监听事件，也就是会执行到下面的ngx_add_event
+         * 那么，一旦有请求访问，会导致所有worker进程都来处理这个accept事件
+         * 初步看，一个事件被accept过之后，其他进程accept会返回-1的fd，然后退出ngx_event_accept函数
+         * 所以，nginx添加了accept_mutex锁，
+         * 只有获取到了accept_mutex锁，进程才会去注册监听事件
+         * 相反，如果没有获取到锁，就会将之前注册的监听事件删除
+         * 各个进程的删除、添加事件，都是独立的。
+         * 因为每个进程的epoll对象都是各种注册的。
+         */
         if (ngx_accept_mutex) {
             continue;
         }

@@ -19,6 +19,7 @@ typedef struct {
 } ngx_http_conf_ctx_t;
 
 
+/* http模块的钩子 */
 typedef struct {
     ngx_int_t   (*pre_conf)(ngx_conf_t *cf);
 

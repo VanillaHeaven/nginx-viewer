@@ -632,18 +632,31 @@ int ngx_epoll_process_events(ngx_cycle_t *cycle)
 
             rev->ready = 1;
 
+            /* 如果并没有获取到accept锁，那么理论上此工作进程处理的都不是accept事件
+             * 立即执行即可
+             */
             if (!ngx_threaded && !ngx_accept_mutex_held) {
                 rev->event_handler(rev);
 
+            /* 否则，本进程就有可能处理accept事件
+             * 如果不是accept事件，就放到延迟事件队列中
+             */
             } else if (!rev->accept) {
                 ngx_post_event(rev);
 
+            /* 处理accept事件 
+             * ngx_accept_disabled 大于0时，本进程不能处理accept事件
+             */
             } else if (ngx_accept_disabled <= 0) {
 
                 ngx_mutex_unlock(ngx_posted_events_mutex);
 
                 rev->event_handler(rev);
 
+                /* 处理完一个accept事件后，ngx_accept_disabled会在ngx_event_accept函数被更新
+                 * 此时有可能大于0，为了能让本进程处理完后续的accept事件，
+                 * 使用ngx_accept_mutex_unlock，将ngx_accept_disabled置为0
+                 */
                 if (ngx_accept_disabled > 0) {
                     ngx_accept_mutex_unlock();
                     accept_lock = 0;

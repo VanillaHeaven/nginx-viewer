@@ -13,6 +13,16 @@
 #include <ngx_event.h>
 
 
+/* 延迟事件是由一个链表结构维护的
+ * ngx_posted_events指向链表的第一个元素
+ * ngx_post_event 就是将一个事件插入到链表首部
+ * 很有意思的是，这个链表类似于双向链表，但又不完全是。
+ * 每个节点的next指针，指向下一个节点，    ngx_event_t *next
+ * 每个节点的prev指针，并不是指向上个节点，
+ * 而是指向上个节点的next指针              ngx_event_t **prev
+ * 因为这个链表并不关心上个节点是什么，
+ * prev的作用，只在于delete某个节点时，直接将上个节点的next指针指向下个节点
+ */
 #define ngx_post_event(ev)                                                    \
             if (ev->prev == NULL) {                                           \
                 ev->next = (ngx_event_t *) ngx_posted_events;                 \

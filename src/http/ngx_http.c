@@ -40,6 +40,7 @@ static ngx_command_t  ngx_http_commands[] = {
 };
 
     
+/* core 模块的钩子 */
 static ngx_core_module_t  ngx_http_module_ctx = {
     ngx_string("http"),
     NULL,
@@ -97,6 +98,7 @@ static char *ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         ngx_modules[m]->ctx_index = ngx_http_max_module++;
     }
 
+    /* 每个http模块都有http\server\location三级的配置 */
     /* the main http main_conf, it's the same in the all http contexts */
     ngx_test_null(ctx->main_conf,
                   ngx_pcalloc(cf->pool, sizeof(void *) * ngx_http_max_module),
@@ -129,6 +131,7 @@ static char *ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             }
         }
 
+        /* 每个模块各自有一份的main conf配置 */
         if (module->create_main_conf) {
             ngx_test_null(ctx->main_conf[mi], module->create_main_conf(cf),
                           NGX_CONF_ERROR);
@@ -176,6 +179,7 @@ static char *ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
         /* init http{} main_conf's */
 
+        /* http块只会有一个，所以对于每个http模块，不需要merge，分别做初始化就好 */
         if (module->init_main_conf) {
             rv = module->init_main_conf(cf, ctx->main_conf[mi]);
             if (rv != NGX_CONF_OK) {
@@ -184,6 +188,7 @@ static char *ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             }
         }
 
+        /* 遍历所有的server块，每个server块都有自己的ctx配置 */
         for (s = 0; s < cmcf->servers.nelts; s++) {
 
             /* merge the server{}s' srv_conf's */
@@ -282,10 +287,12 @@ static char *ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                    NGX_CONF_ERROR);
 
     /* "server" directives */
+    /* 遍历所有server */
     cscfp = cmcf->servers.elts;
     for (s = 0; s < cmcf->servers.nelts; s++) {
 
         /* "listen" directives */
+        /* 遍历一个server中所有的listen */
         lscf = cscfp[s]->listen.elts;
         for (l = 0; l < cscfp[s]->listen.nelts; l++) {
 
@@ -293,9 +300,11 @@ static char *ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
             /* AF_INET only */
 
+            /* 遍历端口列表 */
             in_port = in_ports.elts;
             for (p = 0; p < in_ports.nelts; p++) {
 
+                /* 这个port在之前的listen或者其他server中已经监听过 */
                 if (lscf[l].port == in_port[p].port) {
 
                     /* the port is already in the port list */
@@ -303,9 +312,18 @@ static char *ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                     port_found = 1;
                     addr_found = 0;
 
+                    /* 遍历每个端口监听的所有地址 */
                     in_addr = in_port[p].addrs.elts;
                     for (a = 0; a < in_port[p].addrs.nelts; a++) {
 
+                        /* 这个addr + port 组合已经添加过，
+                         * 就到了更下一级分类的单元，server_name
+                         * 将所有server_name
+                         * 记录到这个端口addr的names结构中
+                         * server_name + addr + port 组成一个监听单元
+                         * 所以在 ngx_http_server_name_t 结构中，
+                         * 也有指针指向其所在的 server 配置
+                         */
                         if (lscf[l].addr == in_addr[a].addr) {
 
                             /* the address is already bound to this port */
@@ -386,6 +404,11 @@ static char *ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                         }
                     }
 
+                    /* 如果这个地址在这个端口中第一次出现，
+                     * 就加到该端口的地址列表中
+                     * in_port[p]->addr
+                     * 并且指明该 addr + port 使用的 server 配置
+                     */
                     if (!addr_found) {
 
                         /*
@@ -413,14 +436,26 @@ static char *ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                 }
             }
 
+            /* 如果port是第一次出现，
+             * 就添加到in_ports端口列表中
+             * 同时会添加一个地址，未指明地址时，默认为任意地址 0
+             * addr + port 可以构成监听的一个单元
+             * 所以在 ngx_http_in_addr_t 结构中，
+             * core_srv_conf 会指明该 addr 使用哪个 server 的配置 
+             * ??? 这里为什么没有对 addr 中的 server_name 赋值？
+             * 大概是因为不需要，如果该 server_name 没有在其他 server 块中配置
+             * 就会命中这个 server
+             */
             if (!port_found) {
 
                 /* add the port to the in_port list */
 
+                /* 把数组的第一个空闲元素赋给目标指针 */
                 ngx_test_null(in_port,
                               ngx_push_array(&in_ports),
                               NGX_CONF_ERROR);
 
+                /* port的值是listen指令中指定的端口 */
                 in_port->port = lscf[l].port;
 
                 ngx_test_null(in_port->port_text.data, ngx_palloc(cf->pool, 7),
@@ -482,6 +517,9 @@ static char *ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             /*
              * if the all server names point to the same server
              * then we do not need to check them at run-time
+             * server_name 都是在同一个 server 配置
+             * 所以找配置时，只要到 addr + port 的层级就够了
+             * 不需要再 check 到 server_name + addr + port 层级
              */
 
             if (!virtual_names) {
@@ -494,6 +532,7 @@ static char *ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
          * to "*:port" only and ignore the other bindings
          */
 
+        /* ??? 这里不是很懂，为什么 a - 1 的地址一定有可能是 INADDR_ANY */
         if (in_addr[a - 1].addr == INADDR_ANY) {
             a--;
 
@@ -501,6 +540,7 @@ static char *ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             a = 0;
         }
 
+        /* 为每一对 addr + port 创建监听的 socket */
         in_addr = in_port[p].addrs.elts;
         while (a < in_port[p].addrs.nelts) {
 
