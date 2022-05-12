@@ -914,6 +914,7 @@ static char *ngx_server_block(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
                   ngx_pcalloc(cf->pool, sizeof(ngx_http_conf_ctx_t)),
                   NGX_CONF_ERROR);
 
+    /* main_conf 直接使用http块解析出来的配置 */
     http_ctx = cf->ctx;
     ctx->main_conf = http_ctx->main_conf;
 
@@ -1031,6 +1032,7 @@ static char *ngx_location_block(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
         return NGX_CONF_ERROR;
     }
 
+    /* location 又复用 http 和 server 解析出来的配置 */
     pctx = cf->ctx;
     ctx->main_conf = pctx->main_conf;
     ctx->srv_conf = pctx->srv_conf;

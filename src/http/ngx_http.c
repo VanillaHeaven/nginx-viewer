@@ -154,6 +154,28 @@ static char *ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     cf->ctx = ctx;
     cf->module_type = NGX_HTTP_MODULE;
     cf->cmd_type = NGX_HTTP_MAIN_CONF;
+    /* 
+     * main_conf、srv_conf、loc_conf
+     * 对应的是指令配置最终生效的等级，与当前是在哪一级做解析无关，
+     * 也就是说，尽管一个指令可以在不同级出现，
+     * 但实际上，无论它在哪级出现，都会解析到它cmd->conf所指向的等级。
+     * srv_conf并不是指，在server级别出现的所有指令，
+     * 而是指，最终在server级别生效的指令的值
+     * 
+     * 举例来说：
+     * client_body_buffer_size，可以出现在http、server、location任意一级
+     * 假如在http级别配置了该指令，
+     * 那么它的值会被解析到 ctx->loc_conf，这里的ctx是http级的ngx_http_conf_ctx_t
+     * 假如在server级别配置了该指令
+     * 那么它的值会被解析到 ctx->loc_conf，这里的ctx是server级的ngx_http_conf_ctx_t
+     * 假如在location级别配置了该指令
+     * 那么它的值会被解析到 ctx->loc_conf，这里的ctx是location级的ngx_http_conf_ctx_t
+     * 发现了吗？
+     * 无论指令出现在哪一级，它都会被解析到对应级别ctx的loc_conf。
+     * 这也就是为什么，
+     * 后面merge的时候，
+     * 是将http级别的ctx->srv_conf与server级别的ctx->srv_conf合并。
+     */
     rv = ngx_conf_parse(cf, NULL);
 
     if (rv != NGX_CONF_OK) {
