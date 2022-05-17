@@ -274,6 +274,10 @@ void ngx_event_accept(ngx_event_t *ev)
         }
 
         c->ctx = ls->ctx;
+        /**
+         * @brief 
+         * 这里就指向了监听地址的server了
+         */
         c->servers = ls->servers;
 
         /* 关注下这里挂的回调函数*/
@@ -357,7 +361,9 @@ void ngx_event_accept(ngx_event_t *ev)
         log->data = NULL;
         log->handler = NULL;
 
-        /* 从这里开启就交由http模块处理了 */
+        /* 从这里开启就交由http模块处理了 
+         * ngx_http_init_connection
+         */
         ls->listening->handler(c);
 
         if (ngx_event_flags & NGX_HAVE_KQUEUE_EVENT) {
@@ -378,7 +384,18 @@ ngx_int_t ngx_trylock_accept_mutex(ngx_cycle_t *cycle)
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                        "accept mutex locked");
 
-        // 之前获取过锁了，不需要重复注册监听事件
+        /**
+         * @brief 
+         * 之前获取过锁了，不需要重复注册监听事件
+         * 这种情况就是，之前获取过accept锁，
+         * 已经监听了accept事件，
+         * 在上一轮处理完事件后，
+         * ngx_accept_mutex被复位为0，允许本进程抢accept锁，
+         * 结果进程又抢到锁了，
+         * 那么就判断下ngx_accept_mutex_held是不是已经在上一轮held过了，
+         * 如果已经held过了，就不需要重复注册监听事件了。
+         * 如果上一轮没有held，那么就监听accept事件
+         */
         if (!ngx_accept_mutex_held) {
             if (ngx_enable_accept_events(cycle) == NGX_ERROR) {
                 *ngx_accept_mutex = 0;
@@ -391,6 +408,7 @@ ngx_int_t ngx_trylock_accept_mutex(ngx_cycle_t *cycle)
         return NGX_OK;
     }
 
+    /* 没抢到accept锁，就释放掉已经监听的 */
     if (ngx_accept_mutex_held) {
         if (ngx_disable_accept_events(cycle) == NGX_ERROR) {
             return NGX_ERROR;

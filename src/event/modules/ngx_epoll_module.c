@@ -417,9 +417,12 @@ int ngx_epoll_process_events(ngx_cycle_t *cycle)
 
     for ( ;; ) { 
         /*
-         * timer是epoll_wait的超时时间
-         * 0表示立即返回
-         * -1表示无限等待
+         * timer是定时器事件中，最旧的一个事件的超时时间
+         * 最旧的事件超时时间大于0，说明所有的定时器事件都还没到处理时间，
+         * 所以把 timer 返回出来，作为epoll_wait的超时时间
+         * 最旧的事件超时时间小于0时，表示已经有事件超时了，所以需要立即处理这些超时事件，在下面ngx_event_expire_timers处理
+         * 为了跟-1做区分，timer会返回值0。
+         * timer为-1表示，定时器中没有事件，那么就不需要为epoll设置超时时间了，无限等就行。
          */
         timer = ngx_event_find_timer();
 
@@ -443,6 +446,10 @@ int ngx_epoll_process_events(ngx_cycle_t *cycle)
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                        "epoll expired timer");
 
+        /**
+         * @brief 
+         * 处理超时事件
+         */
         ngx_event_expire_timers((ngx_msec_t)
                                     (ngx_elapsed_msec - ngx_old_elapsed_msec));
 
@@ -451,12 +458,19 @@ int ngx_epoll_process_events(ngx_cycle_t *cycle)
         }
     }
 
-    /* NGX_TIMER_INFINITE == INFTIM */
+    /* NGX_TIMER_INFINITE == INFTIM 
+     * timer > 0 or timer == -1
+     */
 
     if (timer == NGX_TIMER_INFINITE) {
         expire = 0;
 
     } else {
+        /**
+         * @brief 
+         * 如果是timer>0，那就有可能会超时，
+         * 所以标记下，最后再处理一波
+         */
         expire = 1;
     }
 
@@ -465,8 +479,17 @@ int ngx_epoll_process_events(ngx_cycle_t *cycle)
 
     /* 这里一段获取锁的逻辑
      * 任何锁的操作，都是对共享资源的处理
+     *
+     * 如果ngx_accept_mutex指针的地址不为NULL，
+     * 那么就进入争抢锁的逻辑
      */
     if (ngx_accept_mutex) {
+        /**
+         * @brief 
+         * ngx_accept_disabled是担心一个进程处理的连接过多，
+         * 所以如果ngx_accept_disabled大于0时，
+         * 就不允许它再去抢accept锁
+         */
         if (ngx_accept_disabled > 0) {
             ngx_accept_disabled--;
 
@@ -482,6 +505,12 @@ int ngx_epoll_process_events(ngx_cycle_t *cycle)
             if (ngx_accept_mutex_held) {
                 accept_lock = 1;
 
+            /**
+             * @brief 
+             * epoll_wait timer的时间不会超过ngx_accept_mutex_delay的时间
+             * ngx_accept_mutex_delay是一个进程获取到accept锁之后，
+             * 再次获取到accept最小间隔时间
+             */
             } else if (timer == NGX_TIMER_INFINITE
                        || timer > ngx_accept_mutex_delay)
             {
@@ -534,6 +563,7 @@ int ngx_epoll_process_events(ngx_cycle_t *cycle)
     if (events > 0) {
         /* #define ngx_mutex_lock NGX_OK 
          * NGX_OK == NGX_ERROR? 什么鬼
+         * 如果epoll事件个数大于0，就要尝试获取post延后事件锁
          */
         if (ngx_mutex_lock(ngx_posted_events_mutex) == NGX_ERROR) {
             ngx_accept_mutex_unlock();
@@ -551,6 +581,11 @@ int ngx_epoll_process_events(ngx_cycle_t *cycle)
     for (i = 0; i < events; i++) {
         c = event_list[i].data.ptr;
 
+        /**
+         * @brief 
+         * 连接被释放后，又被取出来当其他请求的连接
+         * instance用来标记是不是不同的请求获取相同的连接
+         */
         instance = (uintptr_t) c & 1;
         c = (ngx_connection_t *) ((uintptr_t) c & (uintptr_t) ~1);
 
@@ -607,7 +642,7 @@ int ngx_epoll_process_events(ngx_cycle_t *cycle)
                     wev->event_handler(wev);
 
                 } else {
-                    /* 看字面意思，如果抢到锁了，就发布一个事件？ */
+                    /* 如果抢到accept锁了，就延后处理写事件 */
                     ngx_post_event(wev);
                 }
             }
@@ -654,8 +689,7 @@ int ngx_epoll_process_events(ngx_cycle_t *cycle)
                 rev->event_handler(rev);
 
                 /* 处理完一个accept事件后，ngx_accept_disabled会在ngx_event_accept函数被更新
-                 * 此时有可能大于0，为了能让本进程处理完后续的accept事件，
-                 * 使用ngx_accept_mutex_unlock，将ngx_accept_disabled置为0
+                 * 此时有可能大于0，后续的accept事件就不能处理了？
                  */
                 if (ngx_accept_disabled > 0) {
                     ngx_accept_mutex_unlock();

@@ -322,6 +322,14 @@ static char *ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
             /* AF_INET only */
 
+            /*
+             * 遍历的顺序
+             * 1. 遍历监听端口
+             * 2. 端口一致，则比较监听的地址，否则新增一个端口
+             * 3. 监听地址一致，则比较server_name，否则新增一个地址
+             * 4. 监听server_name一致，暂未处理。
+             */
+
             /* 遍历端口列表 */
             in_port = in_ports.elts;
             for (p = 0; p < in_ports.nelts; p++) {
@@ -404,6 +412,13 @@ static char *ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                                           ngx_push_array(&in_port[p].addrs),
                                           NGX_CONF_ERROR);
 
+                            /**
+                             * 这里在数组队尾新增一个in_addr元素后，把最后一个INADDR_ANY的值赋给了新元素
+                             * 那么新元素就也指向了INADDR_ANY，
+                             * 然后又更新了原来旧的INADDR_ANY的监听地址，
+                             * INADDR_ANY 就是在这样永远被挤到in_addr数组的最后一个元素的
+                             * 
+                             */
                             ngx_memcpy(inaddr, &in_addr[a],
                                        sizeof(ngx_http_in_addr_t));
 
@@ -416,6 +431,10 @@ static char *ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                              * can be served on this address:port
                              */
 
+                            /**
+                             * @brief 旧的server_name留给旧的，新元素创建自己的server_name监听列表
+                             * 
+                             */
                             ngx_init_array(inaddr->names, cf->pool, 10,
                                            sizeof(ngx_http_server_name_t),
                                            NGX_CONF_ERROR);
@@ -644,6 +663,7 @@ static char *ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                 }
             }
 
+            /* 如果是INANNY_ADDR，那么就监听所有IP就好了，没必要为单独的addr创建ls */
             ls->servers = &in_port[p];
             a++;
         }
@@ -693,6 +713,7 @@ static char *ngx_http_merge_locations(ngx_conf_t *cf,
             return rv;
         }
 
+        /* 嵌套location */
         rv = ngx_http_merge_locations(cf, &clcfp[i]->locations,
                                       clcfp[i]->loc_conf, module, ctx_index);
         if (rv != NGX_CONF_OK) {

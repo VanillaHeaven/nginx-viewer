@@ -359,7 +359,11 @@ static ngx_int_t ngx_event_process_init(ngx_cycle_t *cycle)
     }
 
     /* for each listening socket */
-
+    /**
+     * @brief 
+     * listening已经生成了半连接，
+     * 占用了一部分fd。
+     */
     s = cycle->listening.elts;
     for (i = 0; i < cycle->listening.nelts; i++) {
 
@@ -530,6 +534,15 @@ static char *ngx_events_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     // **ctx: 取出 addr2 地址指向的内容，内容是一个 void * 指针，是一个地址，记录为 addr3
     // addr3 就指向了具体的模块配置结构体
     // ***ctx: 取出 addr3 地址指向的内容，内容是某个模块的配置结构体。
+
+    /**
+     * @brief 
+     * 这里会发现，从cycle取出的event模块，要经过两层指针才指向event子模块的配置
+     * 这是为了保持所有模块配置结构的一致，
+     * 在http模块中，cycle取出的http模块，指向的是main_conf,srv_conf,loc_conf,
+     * main_conf然后才指向各个子模块配置
+     * 命令结构中 cmd->conf 正是为了用来定位这第一层指针的
+     */
 
     *(void **) conf = ctx;
 

@@ -1059,16 +1059,21 @@ static char *ngx_location_block(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     }
 
     clcf = ctx->loc_conf[ngx_http_core_module.ctx_index];
+    /* 这两句指来指去是什么鬼 */
     clcf->loc_conf = ctx->loc_conf;
 
     value = cf->args->elts;
 
     if (cf->args->nelts == 3) {
+        /* location = /path {} */
         if (value[1].len == 1 && value[1].data[0] == '=') {
             clcf->name.len = value[2].len;
             clcf->name.data = value[2].data;
             clcf->exact_match = 1;
 
+        /* location ~ /path {}  # 大小写敏感
+         * location ~* /path {} # 大小写不敏感
+         */
         } else if ((value[1].len == 1 && value[1].data[0] == '~')
                    || (value[1].len == 2
                        && value[1].data[0] == '~'
@@ -1103,6 +1108,7 @@ static char *ngx_location_block(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
             return NGX_CONF_ERROR;
         }
 
+    /* location /path {} */
     } else {
         clcf->name.len = value[1].len;
         clcf->name.data = value[1].data;
@@ -1110,12 +1116,25 @@ static char *ngx_location_block(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 
     pclcf = pctx->loc_conf[ngx_http_core_module.ctx_index];
 
+    /*
+     * 没有location嵌套时，就简单很多了
+     * 把当前location对象，添加到上级ngx_http_core_srv_conf_t->locations中
+     */
     if (pclcf->name.len == 0) {
+        /* 把location对象，添加到server级的locations成员中 */
         cscf = ctx->srv_conf[ngx_http_core_module.ctx_index];
         if (!(clcfp = ngx_push_array(&cscf->locations))) {
             return NGX_CONF_ERROR;
         }
 
+    /*
+     * nginx是允许location嵌套的
+     * location ~ / {
+     *     location = /path1 {}
+     *     location = /path2 {}
+     * }
+     * 所以else的情况，上一级的配置也是ngx_http_core_loc_conf_t
+     */
     } else {
         clcf->prev_location = pclcf;
 
