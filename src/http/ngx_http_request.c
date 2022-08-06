@@ -153,7 +153,10 @@ void ngx_http_init_connection(ngx_connection_t *c)
         return;
     }
 
-    /* 读事件还未准备好，给读事件设置定时器，过一段时间后再ngx_http_init_request */
+    /* 读事件还未准备好，给读事件设置读超时，
+     * 如果达到超时时间，客户端还没有上行数据，那么就上传超时了
+     * ??? 如果客户端正常上行，这个事件是怎么注销的？什么情况会进到这个逻辑？
+     */
     ngx_add_timer(rev, c->listening->post_accept_timeout);
 
     /* 这里似乎epoll没有做什么处理 */

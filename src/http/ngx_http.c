@@ -573,7 +573,11 @@ static char *ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
          * to "*:port" only and ignore the other bindings
          */
 
-        /* ??? 这里不是很懂，为什么 a - 1 的地址一定有可能是 INADDR_ANY */
+        /* ??? 这里不是很懂，为什么 a - 1 的地址一定有可能是 INADDR_ANY
+         * 在 else if (in_addr[a].addr == INADDR_ANY) 中
+         * 新创建的 inaddr 元素复制了 INADDR_ANY，在数组末尾
+         * 而原本 INADDR_ANY 的位置，被重新赋值为当前 listen 的地址。
+         */
         if (in_addr[a - 1].addr == INADDR_ANY) {
             a--;
 
